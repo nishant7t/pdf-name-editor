@@ -313,7 +313,7 @@ def replace_fields_in_pdf(pdf_bytes, replacements_list):
                 # ry is baseline-ish (page_h - bottom of bbox)
                 # text baseline = ry + h*tv
                 baseline  = ry + h * tv
-                rect_bot  = baseline - descent - 2    # extra 2pt down to cover letter bottoms
+                rect_bot  = baseline - descent - 0.1    # extra 2pt down to cover letter bottoms
                 rect_top  = baseline + ascent
                 rect_h    = rect_top - rect_bot
 

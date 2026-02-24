@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PDF Field Changer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d0d0f;--surface:#16161a;--surface2:#1e1e24;
+      --border:#2a2a35;--accent:#7c6af7;--accent2:#f7c06a;
+      --text:#e8e8f0;--muted:#6b6b80;--success:#5af59e;--error:#f75a5a;
+    }
+    html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;overflow-x:hidden}
+    body::before{content:'';position:fixed;inset:0;
+      background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);
+      background-size:48px 48px;opacity:.3;pointer-events:none;z-index:0}
+    body::after{content:'';position:fixed;top:-40%;left:-20%;width:70vw;height:70vw;
+      background:radial-gradient(circle,rgba(124,106,247,.12) 0%,transparent 65%);
+      pointer-events:none;z-index:0;animation:drift 12s ease-in-out infinite alternate}
+    @keyframes drift{from{transform:translate(0,0)}to{transform:translate(8vw,6vh)}}
+    .wrap{position:relative;z-index:1;max-width:760px;margin:0 auto;padding:60px 24px 100px}
+    .badge{display:inline-flex;align-items:center;gap:8px;
+      background:rgba(124,106,247,.12);border:1px solid rgba(124,106,247,.3);
+      color:var(--accent);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+      padding:6px 14px;border-radius:100px;margin-bottom:20px}
+    .badge::before{content:'';width:6px;height:6px;border-radius:50%;
+      background:var(--accent);animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    h1{font-family:'Syne',sans-serif;font-size:clamp(2rem,5vw,3rem);
+      font-weight:800;line-height:1.1;letter-spacing:-.03em;margin-bottom:14px}
+    h1 span{color:var(--accent)}
+    .subtitle{color:var(--muted);font-size:13px;line-height:1.7;max-width:500px;margin-bottom:48px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+      padding:28px 32px;margin-bottom:20px;transition:border-color .2s}
+    .card:hover{border-color:rgba(124,106,247,.25)}
+    .card-title{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;
+      letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+      margin-bottom:20px;display:flex;align-items:center;gap:10px}
+    .num{width:22px;height:22px;background:rgba(124,106,247,.15);
+      border:1px solid rgba(124,106,247,.3);border-radius:6px;
+      display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent)}
+    .drop-zone{border:2px dashed var(--border);border-radius:12px;
+      padding:44px 32px;text-align:center;cursor:pointer;transition:all .25s;position:relative}
+    .drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:rgba(124,106,247,.05)}
+    .drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .drop-icon{font-size:36px;margin-bottom:10px;display:block}
+    .drop-label{font-size:13px;color:var(--muted)}
+    .drop-label strong{color:var(--text)}
+    .file-name{margin-top:10px;font-size:12px;color:var(--accent2);display:none}
+    .btn{display:inline-flex;align-items:center;gap:10px;padding:13px 26px;
+      border-radius:10px;font-family:'Syne',sans-serif;font-size:14px;
+      font-weight:700;border:none;cursor:pointer;transition:all .2s;letter-spacing:.02em}
+    .btn-primary{background:var(--accent);color:#fff;width:100%;justify-content:center;margin-top:18px}
+    .btn-primary:hover:not(:disabled){background:#9183ff;transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,106,247,.35)}
+    .btn-primary:disabled{opacity:.4;cursor:not-allowed}
+    .loader{display:none;text-align:center;padding:28px;color:var(--muted);font-size:13px}
+    .spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);
+      border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .fields-grid{display:grid;gap:14px}
+    .field-row{background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+      padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;
+      align-items:center;animation:slideIn .3s ease both}
+    @keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    .field-name{font-family:'Syne',sans-serif;font-size:12px;font-weight:700;
+      text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:4px}
+    .field-old{font-size:11px;color:var(--muted)}
+    .field-old span{color:var(--accent2);font-weight:500}
+    .inp-label{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;
+      display:block;margin-bottom:6px}
+    .field-row input{width:100%;background:var(--bg);border:1px solid var(--border);
+      border-radius:8px;padding:9px 13px;font-family:'DM Mono',monospace;
+      font-size:13px;color:var(--text);outline:none;transition:border-color .2s}
+    .field-row input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,106,247,.15)}
+    .field-row input::placeholder{color:var(--muted)}
+    .status{padding:12px 18px;border-radius:10px;font-size:13px;margin-top:14px;display:none}
+    .status.error{background:rgba(247,90,90,.1);border:1px solid rgba(247,90,90,.3);color:var(--error)}
+    .status.success{background:rgba(90,245,158,.1);border:1px solid rgba(90,245,158,.3);color:var(--success)}
+    .tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:100px;
+      background:rgba(124,106,247,.12);color:var(--accent);
+      border:1px solid rgba(124,106,247,.2);margin-left:8px;vertical-align:middle}
+    .empty{color:var(--muted);font-size:13px;text-align:center;padding:24px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="badge">Free · No API Key · Runs Locally</div>
+    <h1>PDF <span>Field</span><br/>Changer</h1>
+    <p class="subtitle">Upload your PDF — Name, PRN, Batch and Class are detected automatically. No internet needed, completely free.</p>
+  </header>
+
+  <div class="card">
+    <div class="card-title"><span class="num">1</span> Upload PDF</div>
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="pdfInput" accept=".pdf"/>
+      <span class="drop-icon">📄</span>
+      <div class="drop-label"><strong>Drop your PDF here</strong> or click to browse</div>
+      <div class="file-name" id="fileName"></div>
+    </div>
+    <button class="btn btn-primary" id="detectBtn" disabled>🔍 &nbsp;Detect Fields</button>
+  </div>
+
+  <div class="loader" id="loader">
+    <div class="spinner"></div>
+    Scanning PDF for fields…
+  </div>
+
+  <div class="card" id="fieldsCard" style="display:none">
+    <div class="card-title">
+      <span class="num">2</span> Edit Fields
+      <span class="tag" id="fieldCount"></span>
+    </div>
+    <div class="fields-grid" id="fieldsGrid"></div>
+    <div class="status" id="replaceStatus"></div>
+    <button class="btn btn-primary" id="replaceBtn">✏️ &nbsp;Apply Changes &amp; Download PDF</button>
+  </div>
+</div>
+
+<script>
+  const pdfInput=document.getElementById('pdfInput'),dropZone=document.getElementById('dropZone'),
+        fileName=document.getElementById('fileName'),detectBtn=document.getElementById('detectBtn'),
+        loader=document.getElementById('loader'),fieldsCard=document.getElementById('fieldsCard'),
+        fieldsGrid=document.getElementById('fieldsGrid'),fieldCount=document.getElementById('fieldCount'),
+        replaceBtn=document.getElementById('replaceBtn'),replaceStatus=document.getElementById('replaceStatus');
+  let detectedFields=[],uploadedFile=null;
+
+  pdfInput.addEventListener('change',()=>{if(pdfInput.files[0])onFile(pdfInput.files[0])});
+  dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over')});
+  dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag-over');if(e.dataTransfer.files[0])onFile(e.dataTransfer.files[0])});
+
+  function onFile(file){
+    if(!file.name.endsWith('.pdf')){alert('Please upload a PDF.');return;}
+    uploadedFile=file;
+    fileName.textContent='📎 '+file.name;
+    fileName.style.display='block';
+    detectBtn.disabled=false;
+    fieldsCard.style.display='none';
+    replaceStatus.style.display='none';
+  }
+
+  detectBtn.addEventListener('click',async()=>{
+    if(!uploadedFile)return;
+    detectBtn.disabled=true;
+    loader.style.display='block';
+    fieldsCard.style.display='none';
+    const fd=new FormData();
+    fd.append('pdf',uploadedFile);
+    try{
+      const res=await fetch('/api/detect',{method:'POST',body:fd});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error);
+      detectedFields=data.fields||[];
+      renderFields(detectedFields);
+    }catch(err){alert('Error: '+err.message);}
+    finally{loader.style.display='none';detectBtn.disabled=false;}
+  });
+
+  function renderFields(fields){
+    fieldsGrid.innerHTML='';
+    fieldCount.textContent=fields.length+' field'+(fields.length!==1?'s':'')+' found';
+    if(!fields.length){
+      fieldsGrid.innerHTML='<div class="empty">No fields detected. Make sure your PDF has Name, PRN, Batch or Class labels.</div>';
+    } else {
+      fields.forEach((f,i)=>{
+        const row=document.createElement('div');
+        row.className='field-row';
+        row.style.animationDelay=(i*60)+'ms';
+        row.innerHTML=`
+          <div>
+            <div class="field-name">${f.field}</div>
+            <div class="field-old">Current: <span>${f.value}</span></div>
+          </div>
+          <div>
+            <label class="inp-label">New Value</label>
+            <input type="text" placeholder="Enter new ${f.field}…" data-index="${i}"/>
+          </div>`;
+        fieldsGrid.appendChild(row);
+      });
+    }
+    fieldsCard.style.display='block';
+  }
+
+  replaceBtn.addEventListener('click',async()=>{
+    if(!uploadedFile||!detectedFields.length)return;
+    const inputs=fieldsGrid.querySelectorAll('input[data-index]');
+    const replacements=[];
+    inputs.forEach(inp=>{
+      const val=inp.value.trim();
+      if(!val)return;
+      const f=detectedFields[parseInt(inp.dataset.index)];
+      replacements.push({label:f.label,format:f.format,word_count:f.word_count,new_value:val});
+    });
+    if(!replacements.length){showStatus('error','Please enter at least one new value.');return;}
+    replaceBtn.disabled=true;
+    replaceBtn.textContent='Processing…';
+    replaceStatus.style.display='none';
+    const fd=new FormData();
+    fd.append('pdf',uploadedFile);
+    fd.append('replacements',JSON.stringify(replacements));
+    try{
+      const res=await fetch('/api/replace',{method:'POST',body:fd});
+      if(!res.ok){const e=await res.json();throw new Error(e.error||'Unknown error');}
+      const blob=await res.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;a.download='modified_'+uploadedFile.name;a.click();
+      URL.revokeObjectURL(url);
+      showStatus('success','✓ PDF modified and downloaded!');
+    }catch(err){showStatus('error','Error: '+err.message);}
+    finally{
+      replaceBtn.disabled=false;
+      replaceBtn.innerHTML='✏️ &nbsp;Apply Changes &amp; Download PDF';
+    }
+  });
+
+  function showStatus(type,msg){
+    replaceStatus.className='status '+type;
+    replaceStatus.textContent=msg;
+    replaceStatus.style.display='block';
+  }
+</script>
+</body>
+</html>

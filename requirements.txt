@@ -5,4 +5,4 @@ reportlab
 pypdf
 pymupdf
 gunicorn
-pyTelegramBotAPI
+pyTelegramBotAPI==4.14.0

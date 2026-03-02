@@ -480,39 +480,7 @@ def telegram_webhook():
         bot.process_new_updates([update])
     return "OK", 200
 # ─────────────────────────────────────────────────────────────────────────────
-```
 
----
-
-## Step 3: Update `requirements.txt`
-```
-pyTelegramBotAPI
-```
-
----
-
-## Step 4: Add `BOT_TOKEN` in Render Dashboard
-1. Go to your Render service → **Environment**
-2. Add variable: `BOT_TOKEN` = your token from BotFather
-
----
-
-## Step 5: Register Webhook (once after deploy)
-Paste in browser:
-```
-https://api.telegram.org/botYOUR_TOKEN/setWebhook?url=https://pdf-name-editor.onrender.com/telegram
-```
-
----
-
-## How it will work for users:
-```
-1. User sends PDF
-2. Bot detects: Name, PRN, Batch, Class...
-3. Bot asks: "Name: John → new value?"
-4. User types new name (or "skip")
-5. Repeats for each field
-6. Bot sends back modified PDF ✅
 
 if __name__ == "__main__":
     print("\n✅ Server running! Open http://localhost:5000 in your browser\n")

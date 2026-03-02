@@ -9,6 +9,7 @@ import fitz
 import logging
 import json
 import re
+import telbot
 
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
@@ -362,6 +363,156 @@ def replace():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ─── TELEGRAM BOT ────────────────────────────────────────────────────────────
+BOT_TOKEN = os.environ.get("8725089715:AAE7pY5hd7ao4FHYB3nXETv2DhLIj7LF_Co")
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# Store user state: waiting for field selections after PDF upload
+user_sessions = {}  # chat_id -> {pdf_bytes, fields}
+
+@bot.message_handler(commands=["start", "help"])
+def start(message):
+    bot.reply_to(message, 
+        "👋 Welcome to PDF Name Editor Bot!\n\n"
+        "📄 Send me a PDF and I'll detect fields like Name, PRN, Batch etc.\n"
+        "Then you can edit them and I'll send back the modified PDF!"
+    )
+
+@bot.message_handler(content_types=["document"])
+def handle_pdf(message):
+    chat_id = message.chat.id
+    doc = message.document
+
+    if doc.mime_type != "application/pdf":
+        bot.reply_to(message, "❌ Please send a PDF file!")
+        return
+
+    bot.reply_to(message, "⏳ Analyzing your PDF...")
+
+    # Download the PDF
+    file_info = bot.get_file(doc.file_id)
+    downloaded = bot.download_file(file_info.file_path)
+
+    # Detect fields using your existing function
+    result = detect_fields(downloaded)
+    fields = result.get("fields", [])
+
+    if not fields:
+        bot.reply_to(message, "⚠️ No editable fields found in this PDF.")
+        return
+
+    # Save session
+    user_sessions[chat_id] = {
+        "pdf_bytes": downloaded,
+        "fields": fields,
+        "replacements": [],
+        "current_index": 0
+    }
+
+    # Ask for first field
+    ask_next_field(chat_id, message.message_id)
+
+def ask_next_field(chat_id, reply_to=None):
+    session = user_sessions.get(chat_id)
+    if not session:
+        return
+
+    idx = session["current_index"]
+    fields = session["fields"]
+
+    if idx >= len(fields):
+        # All fields done — apply replacements
+        finish_editing(chat_id)
+        return
+
+    field = fields[idx]
+    text = (
+        f"📝 Field {idx+1}/{len(fields)}: *{field['field']}*\n"
+        f"Current value: `{field['value']}`\n\n"
+        f"Reply with new value, or type `skip` to keep it."
+    )
+    bot.send_message(chat_id, text, parse_mode="Markdown")
+
+@bot.message_handler(func=lambda m: m.chat.id in user_sessions and 
+                     user_sessions[m.chat.id]["current_index"] < len(user_sessions[m.chat.id]["fields"]))
+def handle_field_reply(message):
+    chat_id = message.chat.id
+    session = user_sessions[chat_id]
+    idx = session["current_index"]
+    field = session["fields"][idx]
+    user_input = message.text.strip()
+
+    if user_input.lower() != "skip":
+        session["replacements"].append({
+            "field":      field["field"],
+            "format":     field["format"],
+            "label":      field["label"],
+            "word_count": field["word_count"],
+            "new_value":  user_input
+        })
+
+    session["current_index"] += 1
+    ask_next_field(chat_id)
+
+def finish_editing(chat_id):
+    session = user_sessions.pop(chat_id, None)
+    if not session or not session["replacements"]:
+        bot.send_message(chat_id, "⚠️ No changes made.")
+        return
+
+    bot.send_message(chat_id, "⚙️ Applying changes to your PDF...")
+
+    try:
+        result_bytes = replace_fields_in_pdf(session["pdf_bytes"], session["replacements"])
+        bot.send_document(
+            chat_id,
+            ("modified.pdf", BytesIO(result_bytes)),
+            caption="✅ Here's your modified PDF!"
+        )
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Error: {str(e)}")
+
+# Webhook endpoint for Telegram
+@app.route("/telegram", methods=["POST"])
+def telegram_webhook():
+    if request.headers.get("content-type") == "application/json":
+        update = telebot.types.Update.de_json(request.get_data(as_text=True))
+        bot.process_new_updates([update])
+    return "OK", 200
+# ─────────────────────────────────────────────────────────────────────────────
+```
+
+---
+
+## Step 3: Update `requirements.txt`
+```
+pyTelegramBotAPI
+```
+
+---
+
+## Step 4: Add `BOT_TOKEN` in Render Dashboard
+1. Go to your Render service → **Environment**
+2. Add variable: `BOT_TOKEN` = your token from BotFather
+
+---
+
+## Step 5: Register Webhook (once after deploy)
+Paste in browser:
+```
+https://api.telegram.org/botYOUR_TOKEN/setWebhook?url=https://pdf-name-editor.onrender.com/telegram
+```
+
+---
+
+## How it will work for users:
+```
+1. User sends PDF
+2. Bot detects: Name, PRN, Batch, Class...
+3. Bot asks: "Name: John → new value?"
+4. User types new name (or "skip")
+5. Repeats for each field
+6. Bot sends back modified PDF ✅
 
 if __name__ == "__main__":
     print("\n✅ Server running! Open http://localhost:5000 in your browser\n")

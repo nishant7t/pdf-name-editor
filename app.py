@@ -365,7 +365,7 @@ def replace():
 
 # ─── TELEGRAM BOT ────────────────────────────────────────────────────────────
 BOT_TOKEN = "8725089715:AAE7pY5hd7ao4FHYB3nXETv2DhLIj7LF_Co"
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
 # Store user state: waiting for field selections after PDF upload
 user_sessions = {}  # chat_id -> {pdf_bytes, fields}

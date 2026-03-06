@@ -477,10 +477,15 @@ def finish_editing(chat_id):
 def telegram_webhook():
     try:
         json_str = request.get_data(as_text=True)
+        print(f"RAW UPDATE: {json_str}")  # 👈 shows full message in logs
         update = telebot.types.Update.de_json(json_str)
+        print(f"PARSED UPDATE: {update}")
         bot.process_new_updates([update])
+        print("UPDATE PROCESSED OK")
     except Exception as e:
-        print(f"Webhook error: {e}")
+        print(f"WEBHOOK ERROR: {e}")
+        import traceback
+        traceback.print_exc()
     return "OK", 200
 # ─────────────────────────────────────────────────────────────────────────────
 

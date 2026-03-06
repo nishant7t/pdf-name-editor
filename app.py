@@ -475,9 +475,12 @@ def finish_editing(chat_id):
 # Webhook endpoint for Telegram
 @app.route("/telegram", methods=["POST"])
 def telegram_webhook():
-    if request.headers.get("content-type") == "application/json":
-        update = telebot.types.Update.de_json(request.get_data(as_text=True))
+    try:
+        json_str = request.get_data(as_text=True)
+        update = telebot.types.Update.de_json(json_str)
         bot.process_new_updates([update])
+    except Exception as e:
+        print(f"Webhook error: {e}")
     return "OK", 200
 # ─────────────────────────────────────────────────────────────────────────────
 

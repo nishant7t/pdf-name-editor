@@ -10,6 +10,8 @@ import logging
 import json
 import re
 import telebot
+import pytesseract
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 

@@ -4,5 +4,8 @@ pdfplumber
 reportlab
 pypdf
 pymupdf
-gunicorn
 pyTelegramBotAPI==4.14.0
+pytesseract
+pdf2image
+Pillow
+gunicorn

@@ -10,8 +10,6 @@ import logging
 import json
 import re
 import telebot
-import pytesseract
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
@@ -98,45 +96,43 @@ def detect_fields_normal(pdf_bytes):
                                            "label": label_key, "word_count": len(value.split())})
                             seen.add(field)
     except Exception as e:
-        print(f"Normal detection error: {e}")
-    return {"fields": fields}
-
-
-def detect_fields_ocr(pdf_bytes):
-    """OCR-based detection for image/vector PDFs (AutoCAD, scanned, etc.)"""
-    fields = []
-    try:
-        import pytesseract
-        from pdf2image import convert_from_bytes
-
-        print("Trying OCR detection...")
-        images = convert_from_bytes(pdf_bytes, dpi=200)
-        all_lines = []
-        for page_img in images:
-            text = pytesseract.image_to_string(page_img)
-            all_lines.extend(text.split("\n"))
-
-        fields = detect_fields_from_text(all_lines)
-        print(f"OCR found {len(fields)} fields")
-    except ImportError:
-        print("OCR libraries not available (pytesseract/pdf2image)")
-    except Exception as e:
-        print(f"OCR detection error: {e}")
+        print(f"pdfplumber detection error: {e}")
     return {"fields": fields}
 
 
 def detect_fields_fitz(pdf_bytes):
-    """PyMuPDF-based detection as second fallback."""
+    """PyMuPDF-based detection — works for AutoCAD/vector/compressed PDFs."""
     fields = []
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         all_lines = []
         for page in doc:
-            text = page.get_text("text")
-            all_lines.extend(text.split("\n"))
+            # Method A: extract words grouped by line (most accurate)
+            words = page.get_text("words")
+            lines = {}
+            for w in words:
+                key = round(w[1] / 5) * 5  # group by Y position
+                lines.setdefault(key, []).append(w[4])
+            for _, line_words in sorted(lines.items()):
+                all_lines.append(" ".join(line_words))
+
+            # Method B: plain text extraction as backup
+            plain = page.get_text("text")
+            if plain.strip():
+                all_lines.extend(plain.split("\n"))
+
         doc.close()
+
+        # Clean lines
+        all_lines = [l.strip() for l in all_lines if l.strip()]
+
+        # Debug: show what was extracted
+        print(f"PyMuPDF extracted {len(all_lines)} lines")
+        print(f"Sample lines: {all_lines[:20]}")
+
         fields = detect_fields_from_text(all_lines)
         print(f"PyMuPDF found {len(fields)} fields")
+
     except Exception as e:
         print(f"PyMuPDF detection error: {e}")
     return {"fields": fields}
@@ -144,11 +140,12 @@ def detect_fields_fitz(pdf_bytes):
 
 def detect_fields(pdf_bytes):
     """
-    Try 3 methods in order:
-    1. pdfplumber (best for normal PDFs)
-    2. PyMuPDF/fitz (better for compressed/vector PDFs)
-    3. OCR via pytesseract (best for scanned/AutoCAD converted PDFs)
+    Try 2 methods in order:
+    1. pdfplumber — best for normal text PDFs
+    2. PyMuPDF   — best for AutoCAD/vector/compressed PDFs
     """
+    print(f"PDF size: {len(pdf_bytes)} bytes")
+
     # Method 1: pdfplumber
     result = detect_fields_normal(pdf_bytes)
     if result["fields"]:
@@ -158,12 +155,6 @@ def detect_fields(pdf_bytes):
     # Method 2: PyMuPDF
     print("pdfplumber found nothing, trying PyMuPDF...")
     result = detect_fields_fitz(pdf_bytes)
-    if result["fields"]:
-        return result
-
-    # Method 3: OCR
-    print("PyMuPDF found nothing, trying OCR...")
-    result = detect_fields_ocr(pdf_bytes)
     return result
 
 
@@ -350,9 +341,9 @@ def replace_fields_in_pdf(pdf_bytes, replacements_list):
     writer = PdfWriter()
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
         for page_num, page in enumerate(reader.pages):
-            pl_page    = pdf.pages[page_num]
-            page_w     = float(page.mediabox.width)
-            page_h     = float(page.mediabox.height)
+            pl_page = pdf.pages[page_num]
+            page_w  = float(page.mediabox.width)
+            page_h  = float(page.mediabox.height)
             reps = []
             for item in replacements_list:
                 bbox, fs, ib = locate_value(pl_page, item)
@@ -391,18 +382,17 @@ def replace_fields_in_pdf(pdf_bytes, replacements_list):
 
                 from reportlab.pdfbase.pdfmetrics import getFont
                 try:
-                    face       = getFont(font).face
-                    ascent     = face.ascent  * fs / 1000.0
-                    descent    = abs(face.descent) * fs / 1000.0
+                    face    = getFont(font).face
+                    ascent  = face.ascent  * fs / 1000.0
+                    descent = abs(face.descent) * fs / 1000.0
                 except:
                     ascent  = fs * 0.8
                     descent = fs * 0.2
 
-                baseline  = ry + h * tv
-                rect_bot  = baseline - descent - 0.1
-                rect_top  = baseline + ascent
-                rect_h    = rect_top - rect_bot
-
+                baseline = ry + h * tv
+                rect_bot = baseline - descent - 0.1
+                rect_top = baseline + ascent
+                rect_h   = rect_top - rect_bot
                 rx  = ex0 - pl
                 rw  = min(ow + pl + pr, page_w - rx)
 
@@ -467,33 +457,41 @@ def start(message):
 @bot.message_handler(content_types=["document"])
 def handle_pdf(message):
     chat_id = message.chat.id
-    doc = message.document
+    doc     = message.document
+    print(f"📥 PDF from: {message.from_user.first_name} (ID: {message.from_user.id}) | File: {doc.file_name}")
 
     if doc.mime_type != "application/pdf":
         bot.reply_to(message, "❌ Please send a PDF file!")
         return
 
-    bot.reply_to(message, "⏳ Analyzing your PDF... (this may take a moment for complex files)")
+    bot.reply_to(message, "⏳ Analyzing your PDF...")
 
     try:
-        file_info = bot.get_file(doc.file_id)
+        file_info  = bot.get_file(doc.file_id)
         downloaded = bot.download_file(file_info.file_path)
 
         result = detect_fields(downloaded)
         fields = result.get("fields", [])
 
         if not fields:
-            bot.reply_to(message, "⚠️ No editable fields found in this PDF.\n\nThis PDF may use vector/image text that cannot be edited automatically.")
+            bot.reply_to(message,
+                "⚠️ No editable fields found in this PDF.\n\n"
+                "This PDF may use vector/image text that cannot be detected automatically."
+            )
             return
 
         user_sessions[chat_id] = {
-            "pdf_bytes": downloaded,
-            "fields": fields,
-            "replacements": [],
+            "pdf_bytes":     downloaded,
+            "fields":        fields,
+            "replacements":  [],
             "current_index": 0
         }
 
-        bot.send_message(chat_id, f"✅ Found {len(fields)} field(s)! Let's edit them one by one.\nType `skip` to keep any field unchanged.\n")
+        bot.send_message(chat_id,
+            f"✅ Found {len(fields)} field(s)! Let's edit them one by one.\n"
+            f"Type `skip` to keep any field unchanged.\n",
+            parse_mode="Markdown"
+        )
         ask_next_field(chat_id)
 
     except Exception as e:
@@ -505,7 +503,7 @@ def ask_next_field(chat_id):
     if not session:
         return
 
-    idx = session["current_index"]
+    idx    = session["current_index"]
     fields = session["fields"]
 
     if idx >= len(fields):
@@ -513,7 +511,7 @@ def ask_next_field(chat_id):
         return
 
     field = fields[idx]
-    text = (
+    text  = (
         f"📝 Field {idx+1}/{len(fields)}: *{field['field']}*\n"
         f"Current value: `{field['value']}`\n\n"
         f"Reply with new value, or type `skip` to keep it."
@@ -524,10 +522,10 @@ def ask_next_field(chat_id):
 @bot.message_handler(func=lambda m: m.chat.id in user_sessions and
                      user_sessions[m.chat.id]["current_index"] < len(user_sessions[m.chat.id]["fields"]))
 def handle_field_reply(message):
-    chat_id = message.chat.id
-    session = user_sessions[chat_id]
-    idx = session["current_index"]
-    field = session["fields"][idx]
+    chat_id    = message.chat.id
+    session    = user_sessions[chat_id]
+    idx        = session["current_index"]
+    field      = session["fields"][idx]
     user_input = message.text.strip()
 
     if user_input.lower() != "skip":
@@ -566,7 +564,7 @@ def finish_editing(chat_id):
 def telegram_webhook():
     try:
         json_str = request.get_data(as_text=True)
-        update = telebot.types.Update.de_json(json_str)
+        update   = telebot.types.Update.de_json(json_str)
         bot.process_new_updates([update])
     except Exception as e:
         print(f"Webhook error: {e}")

@@ -1,9 +1,11 @@
-services:
-  - type: web
-    name: pdf-field-replacer
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
+flask
+flask-cors
+pdfplumber
+reportlab
+pypdf
+pymupdf
+pyTelegramBotAPI==4.14.0
+pytesseract
+pdf2image
+Pillow
+gunicorn

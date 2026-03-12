@@ -1,11 +1,6 @@
-flask
-flask-cors
-pdfplumber
-reportlab
-pypdf
-pymupdf
-pyTelegramBotAPI==4.14.0
-pytesseract
-pdf2image
-Pillow
-gunicorn
+services:
+  - type: web
+    name: pdf-name-editor
+    env: python
+    buildCommand: apt-get install -y tesseract-ocr poppler-utils && pip install -r requirements.txt
+    startCommand: gunicorn app:app
